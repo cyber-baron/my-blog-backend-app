@@ -37,3 +37,5 @@ build/
 
 ### Mac OS ###
 .DS_Store
+# Ignore all IntelliJ project-local settings
+.idea/

@@ -1,0 +1,5 @@
+services:
+  my-blog-front-app:
+    build: ../my-blog-front-app
+    ports:
+      - "80:80"

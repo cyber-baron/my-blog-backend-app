@@ -1,0 +1,19 @@
+name: Build and test
+on:
+  push:
+    branches: [main, the-rest-steps-in-project]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run unit and integration tests, package WAR
+        run: mvn -B clean verify

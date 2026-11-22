@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -60,6 +62,50 @@ class PostControllerMvcIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.posts[0].title").value("Changed"));
         mvc.perform(delete("/api/posts/{id}", postId)).andExpect(status().isOk());
         mvc.perform(get("/api/posts/{id}", postId)).andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "null", "mismatch"})
+    void rejectsPostUpdateWithInvalidId(String idCase) throws Exception {
+        long postId = createPost("Original", "Original body", "java");
+        var payload = mapper.createObjectNode()
+                .put("title", "Changed").put("text", "Changed body");
+        payload.putArray("tags").add("spring");
+        if (idCase.equals("null")) payload.putNull("id");
+        if (idCase.equals("mismatch")) payload.put("id", postId + 1);
+
+        mvc.perform(put("/api/posts/{id}", postId)
+                        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").isNotEmpty());
+        mvc.perform(get("/api/posts/{id}", postId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Original"))
+                .andExpect(jsonPath("$.text").value("Original body"))
+                .andExpect(jsonPath("$.tags", contains("java")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "null", "mismatch"})
+    void rejectsCommentUpdateWithInvalidId(String idCase) throws Exception {
+        long postId = createPost("Post", "Body");
+        String created = mvc.perform(post("/api/posts/{id}/comments", postId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(mapper.createObjectNode()
+                                .put("text", "Original comment").put("postId", postId))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long commentId = mapper.readTree(created).get("id").asLong();
+        var payload = mapper.createObjectNode().put("text", "Changed comment").put("postId", postId);
+        if (idCase.equals("null")) payload.putNull("id");
+        if (idCase.equals("mismatch")) payload.put("id", commentId + 1);
+
+        mvc.perform(put("/api/posts/{postId}/comments/{id}", postId, commentId)
+                        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").isNotEmpty());
+        mvc.perform(get("/api/posts/{postId}/comments/{id}", postId, commentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.text").value("Original comment"));
     }
 
     @Test

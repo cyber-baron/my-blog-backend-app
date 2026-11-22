@@ -46,7 +46,8 @@ public class CommentService {
         if (request == null) throw new IllegalArgumentException("Request is required");
         posts.requirePost(postId);
         checkBodyPostId(postId, request.postId());
-        if (request.id() != null && request.id() != commentId) {
+        if (request.id() == null) throw new IllegalArgumentException("Comment id is required");
+        if (request.id() != commentId) {
             throw new IllegalArgumentException("Comment id in body differs from path");
         }
         validateText(request.text());

@@ -48,7 +48,8 @@ public class PostService {
     @Transactional
     public PostResponse update(long id, UpdatePostRequest request) {
         if (request == null) throw new IllegalArgumentException("Request is required");
-        if (request.id() != null && request.id() != id) {
+        if (request.id() == null) throw new IllegalArgumentException("Post id is required");
+        if (request.id() != id) {
             throw new IllegalArgumentException("Post id in body differs from path");
         }
         validatePost(request.title(), request.text());

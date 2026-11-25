@@ -1,6 +1,8 @@
 package com.cyberbaron.blog.repository;
 
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import com.cyberbaron.blog.model.Post;
 import com.cyberbaron.blog.exception.NotFoundException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -42,6 +44,18 @@ public class PostQueryDao {
         String where = whereClause(tags, params);
         Long count = jdbc.queryForObject("SELECT COUNT(*) FROM posts p" + where, params, Long.class);
         return count == null ? 0 : count;
+    }
+
+    public Map<Long, Long> countCommentsByPostIds(List<Long> postIds) {
+        if (postIds.isEmpty()) return Map.of();
+        Map<Long, Long> result = new HashMap<>();
+        jdbc.query("""
+                SELECT post_id, COUNT(*) AS comments_count FROM comments
+                WHERE post_id IN (:postIds) GROUP BY post_id
+                """, new MapSqlParameterSource("postIds", postIds), rs -> {
+            result.put(rs.getLong("post_id"), rs.getLong("comments_count"));
+        });
+        return result;
     }
 
     public List<Post> findPage(String title, List<String> tags, int pageSize, long offset) {

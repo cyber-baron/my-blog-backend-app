@@ -1,9 +1,11 @@
 package com.cyberbaron.blog.repository;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import com.cyberbaron.blog.model.Tag;
@@ -29,6 +31,20 @@ public class PostTagDao {
                 WHERE pt.post_id = :postId ORDER BY t.name
                 """, new MapSqlParameterSource("postId", postId),
                 (rs, rowNum) -> rs.getString(1));
+    }
+
+    public Map<Long, List<String>> findByPostIds(List<Long> postIds) {
+        if (postIds.isEmpty()) return Map.of();
+        Map<Long, List<String>> result = new HashMap<>();
+        jdbc.query("""
+                SELECT pt.post_id, t.name FROM tags t
+                JOIN post_tags pt ON pt.tag_id = t.id
+                WHERE pt.post_id IN (:postIds) ORDER BY pt.post_id, t.name
+                """, new MapSqlParameterSource("postIds", postIds), rs -> {
+            result.computeIfAbsent(rs.getLong("post_id"), id -> new ArrayList<>())
+                    .add(rs.getString("name"));
+        });
+        return result;
     }
 
     public void replace(long postId, List<String> rawTags) {

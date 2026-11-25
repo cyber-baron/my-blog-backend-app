@@ -1,6 +1,7 @@
 package com.cyberbaron.blog.service;
 
 import java.util.List;
+import java.util.Map;
 
 import com.cyberbaron.blog.dto.post.CreatePostRequest;
 import com.cyberbaron.blog.dto.post.PostPageResponse;
@@ -37,12 +38,13 @@ public class PostService {
         List<String> normalizedTags = PostTagDao.normalize(request.tags());
         Post saved = posts.save(new Post(null, request.title().trim(), request.text(), 0));
         tags.replace(saved.id(), normalizedTags);
-        return toResponse(saved, false);
+        return toResponse(saved, tags.findByPostId(saved.id()), comments.countByPostId(saved.id()), false);
     }
 
     @Transactional(readOnly = true)
     public PostResponse get(long id) {
-        return toResponse(requirePost(id), false);
+        Post post = requirePost(id);
+        return toResponse(post, tags.findByPostId(id), comments.countByPostId(id), false);
     }
 
     @Transactional
@@ -57,7 +59,7 @@ public class PostService {
         Post old = requirePost(id);
         Post updated = posts.save(new Post(old.id(), request.title().trim(), request.text(), old.likesCount()));
         tags.replace(id, normalizedTags);
-        return toResponse(updated, false);
+        return toResponse(updated, tags.findByPostId(id), comments.countByPostId(id), false);
     }
 
     @Transactional
@@ -81,8 +83,14 @@ public class PostService {
         long lastPageLong = Math.max(1, (total + pageSize - 1) / pageSize);
         int lastPage = Math.toIntExact(Math.min(Integer.MAX_VALUE, lastPageLong));
         long offset = ((long) pageNumber - 1L) * pageSize;
-        List<PostResponse> result = queries.findPage(criteria.title(), criteria.tags(), pageSize, offset)
-                .stream().map(post -> toResponse(post, true)).toList();
+        List<Post> page = queries.findPage(criteria.title(), criteria.tags(), pageSize, offset);
+        List<Long> postIds = page.stream().map(Post::id).toList();
+        Map<Long, List<String>> tagsByPostId = tags.findByPostIds(postIds);
+        Map<Long, Long> commentCountsByPostId = queries.countCommentsByPostIds(postIds);
+        List<PostResponse> result = page.stream()
+                .map(post -> toResponse(post, tagsByPostId.getOrDefault(post.id(), List.of()),
+                        commentCountsByPostId.getOrDefault(post.id(), 0L), true))
+                .toList();
         return new PostPageResponse(result, pageNumber > 1, pageNumber < lastPage, lastPage);
     }
 
@@ -92,10 +100,9 @@ public class PostService {
         return posts.findById(id).orElseThrow(() -> new NotFoundException("Post " + id + " not found"));
     }
 
-    private PostResponse toResponse(Post post, boolean preview) {
+    private static PostResponse toResponse(Post post, List<String> tags, long commentsCount, boolean preview) {
         String text = preview ? truncatePreview(post.text()) : post.text();
-        return new PostResponse(post.id(), post.title(), text, tags.findByPostId(post.id()),
-                post.likesCount(), comments.countByPostId(post.id()));
+        return new PostResponse(post.id(), post.title(), text, tags, post.likesCount(), commentsCount);
     }
 
     public static String truncatePreview(String text) {

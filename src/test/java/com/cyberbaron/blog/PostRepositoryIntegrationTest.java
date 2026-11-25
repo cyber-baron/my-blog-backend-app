@@ -11,7 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,6 +26,7 @@ class PostRepositoryIntegrationTest {
     @Autowired PostRepository posts;
     @Autowired CommentRepository comments;
     @Autowired NamedParameterJdbcOperations jdbc;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @Test
     void storesAndReadsPostViaSpringDataJdbc() {
@@ -40,16 +45,34 @@ class PostRepositoryIntegrationTest {
     }
 
     @Test
-    void updatingContentPreservesLikesAddedSincePostWasRead() {
-        Post original = posts.save(new Post(null, "Original", "Original body", 2));
-        jdbc.update("UPDATE posts SET likes_count = likes_count + 1 WHERE id = :id",
-                java.util.Map.of("id", original.id()));
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void updatingContentPreservesLikeCommittedInSeparateTransaction() {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        Long postId = transaction.execute(status ->
+                posts.save(new Post(null, "Original", "Original body", 2)).id());
+        assertNotNull(postId);
 
-        assertEquals(1, posts.updateContent(original.id(), "Edited", "Edited body"));
+        try {
+            transaction.executeWithoutResult(editStatus -> {
+                Post original = posts.findById(postId).orElseThrow();
+                assertEquals(2L, original.likesCount());
 
-        Post updated = posts.findById(original.id()).orElseThrow();
-        assertEquals("Edited", updated.title());
-        assertEquals("Edited body", updated.text());
-        assertEquals(3L, updated.likesCount());
+                transaction.executeWithoutResult(likeStatus -> {
+                    assertEquals(1, jdbc.update(
+                            "UPDATE posts SET likes_count = likes_count + 1 WHERE id = :id",
+                            java.util.Map.of("id", postId)));
+                });
+                assertEquals(1, posts.updateContent(original.id(), "Edited", "Edited body"));
+            });
+
+            Post updated = transaction.execute(status -> posts.findById(postId).orElseThrow());
+            assertNotNull(updated);
+            assertEquals("Edited", updated.title());
+            assertEquals("Edited body", updated.text());
+            assertEquals(3L, updated.likesCount());
+        } finally {
+            transaction.executeWithoutResult(status -> posts.deleteById(postId));
+        }
     }
 }

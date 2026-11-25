@@ -1,6 +1,9 @@
 package com.cyberbaron.blog.model;
 
-/** Comment belongs to a post identified by postId */
-public record Comment(Long id, Long postId, String text) {
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
+@Table("COMMENTS")
+public record Comment(@Id Long id, @Column("POST_ID") Long postId, String text) {
 }

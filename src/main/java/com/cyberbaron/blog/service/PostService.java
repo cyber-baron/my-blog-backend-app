@@ -1,0 +1,127 @@
+package com.cyberbaron.blog.service;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import com.cyberbaron.blog.dto.post.CreatePostRequest;
+import com.cyberbaron.blog.dto.post.PostPageResponse;
+import com.cyberbaron.blog.dto.post.PostResponse;
+import com.cyberbaron.blog.dto.post.UpdatePostRequest;
+import com.cyberbaron.blog.exception.NotFoundException;
+import com.cyberbaron.blog.model.Post;
+import com.cyberbaron.blog.repository.CommentRepository;
+import com.cyberbaron.blog.repository.PostQueryDao;
+import com.cyberbaron.blog.repository.PostRepository;
+import com.cyberbaron.blog.repository.PostTagDao;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class PostService {
+    private final PostRepository posts;
+    private final CommentRepository comments;
+    private final PostTagDao tags;
+    private final PostQueryDao queries;
+
+    public PostService(PostRepository posts, CommentRepository comments,
+                       PostTagDao tags, PostQueryDao queries) {
+        this.posts = posts;
+        this.comments = comments;
+        this.tags = tags;
+        this.queries = queries;
+    }
+
+    @Transactional
+    public PostResponse create(CreatePostRequest request) {
+        if (request == null) throw new IllegalArgumentException("Request is required");
+        validatePost(request.title(), request.text());
+        List<String> normalizedTags = PostTagDao.normalize(request.tags());
+        Post saved = posts.save(new Post(null, request.title().trim(), request.text(), 0));
+        tags.replace(saved.id(), normalizedTags);
+        return toResponse(saved, tags.findByPostId(saved.id()), comments.countByPostId(saved.id()), false);
+    }
+
+    @Transactional(readOnly = true)
+    public PostResponse get(long id) {
+        Post post = requirePost(id);
+        return toResponse(post, tags.findByPostId(id), comments.countByPostId(id), false);
+    }
+
+    @Transactional
+    public PostResponse update(long id, UpdatePostRequest request) {
+        if (request == null) throw new IllegalArgumentException("Request is required");
+        if (request.id() == null) throw new IllegalArgumentException("Post id is required");
+        if (request.id() != id) {
+            throw new IllegalArgumentException("Post id in body differs from path");
+        }
+        validatePost(request.title(), request.text());
+        List<String> normalizedTags = PostTagDao.normalize(request.tags());
+        if (id < 1) throw new IllegalArgumentException("Post id must be positive");
+        if (posts.updateContent(id, request.title().trim(), request.text()) == 0) {
+            throw new NotFoundException("Post " + id + " not found");
+        }
+        tags.replace(id, normalizedTags);
+        Post updated = requirePost(id);
+        return toResponse(updated, tags.findByPostId(id), comments.countByPostId(id), false);
+    }
+
+    @Transactional
+    public void delete(long id) {
+        requirePost(id);
+        posts.deleteById(id);
+    }
+
+    @Transactional
+    public long incrementLikes(long id) {
+        return queries.incrementLikes(id);
+    }
+
+    @Transactional(readOnly = true)
+    public PostPageResponse list(String search, int pageNumber, int pageSize) {
+        if (pageNumber < 1 || pageSize < 1 || pageSize > 100) {
+            throw new IllegalArgumentException("pageNumber must be >= 1; pageSize must be 1..100");
+        }
+        SearchCriteria criteria = SearchCriteria.parse(search);
+        long total = queries.count(criteria.title(), criteria.tags());
+        long lastPageLong = Math.max(1, (total + pageSize - 1) / pageSize);
+        int lastPage = Math.toIntExact(Math.min(Integer.MAX_VALUE, lastPageLong));
+        long offset = ((long) pageNumber - 1L) * pageSize;
+        List<Post> page = queries.findPage(criteria.title(), criteria.tags(), pageSize, offset);
+        List<Long> postIds = page.stream().map(Post::id).toList();
+        Map<Long, List<String>> tagsByPostId = tags.findByPostIds(postIds);
+        Map<Long, Long> commentCountsByPostId = queries.countCommentsByPostIds(postIds);
+        List<PostResponse> result = page.stream()
+                .map(post -> toResponse(post, tagsByPostId.getOrDefault(post.id(), List.of()),
+                        commentCountsByPostId.getOrDefault(post.id(), 0L), true))
+                .toList();
+        return new PostPageResponse(result, pageNumber > 1, pageNumber < lastPage, lastPage);
+    }
+
+    @Transactional(readOnly = true)
+    public Post requirePost(long id) {
+        if (id < 1) throw new IllegalArgumentException("Post id must be positive");
+        return posts.findById(id).orElseThrow(() -> new NotFoundException("Post " + id + " not found"));
+    }
+
+    private static PostResponse toResponse(Post post, List<String> tags, long commentsCount, boolean preview) {
+        String text = preview ? firstParagraph(post.text()) : post.text();
+        return new PostResponse(post.id(), post.title(), text, tags, post.likesCount(), commentsCount);
+    }
+
+    public static String firstParagraph(String text) {
+        return text.lines()
+                .dropWhile(String::isBlank)
+                .takeWhile(line -> !line.isBlank())
+                .collect(Collectors.joining("\n"));
+    }
+
+    private static void validatePost(String title, String text) {
+        if (title == null || title.isBlank() || title.length() > 255) {
+            throw new IllegalArgumentException("Post title must be 1..255 characters");
+        }
+        if (text == null || text.isBlank() || text.length() > 100_000) {
+            throw new IllegalArgumentException("Post text must be 1..100000 characters");
+        }
+    }
+}

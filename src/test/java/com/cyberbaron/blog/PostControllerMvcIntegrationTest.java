@@ -122,7 +122,7 @@ class PostControllerMvcIntegrationTest {
     }
 
     @Test
-    void supportsCommentsAndImagesAndCascadeDelete() throws Exception {
+    void createsUpdatesAndReadsComment() throws Exception {
         long postId = createPost("Post", "Body");
         String created = mvc.perform(post("/api/posts/{id}/comments", postId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -138,7 +138,13 @@ class PostControllerMvcIntegrationTest {
                         .content("{\"id\":" + commentId + ",\"postId\":" + postId + ",\"text\":\"Edited\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.text").value("Edited"));
         mvc.perform(get("/api/posts/{postId}/comments/{id}", postId, commentId))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.text").value("Edited"));
+    }
+
+    @Test
+    void uploadsAndReadsPostImage() throws Exception {
+        long postId = createPost("Post", "Body");
         byte[] png = new byte[]{(byte) 137, 80, 78, 71, 13, 10, 26, 10};
         var file = new MockMultipartFile("image", "sample.png", "image/png", png);
         mvc.perform(multipart("/api/posts/{id}/image", postId).file(file)
@@ -148,6 +154,20 @@ class PostControllerMvcIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.IMAGE_PNG))
                 .andExpect(content().bytes(png));
+    }
+
+    @Test
+    void returns404ForCommentAfterPostDeletion() throws Exception {
+        long postId = createPost("Post", "Body");
+        String created = mvc.perform(post("/api/posts/{id}/comments", postId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"text\":\"Hello\",\"postId\":" + postId + "}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long commentId = mapper.readTree(created).get("id").asLong();
+        mvc.perform(get("/api/posts/{postId}/comments/{id}", postId, commentId))
+                .andExpect(status().isOk());
+
         mvc.perform(delete("/api/posts/{id}", postId)).andExpect(status().isOk());
         mvc.perform(get("/api/posts/{postId}/comments/{id}", postId, commentId)).andExpect(status().isNotFound());
     }

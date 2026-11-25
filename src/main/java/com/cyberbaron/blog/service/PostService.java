@@ -2,6 +2,7 @@ package com.cyberbaron.blog.service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.cyberbaron.blog.dto.post.CreatePostRequest;
 import com.cyberbaron.blog.dto.post.PostPageResponse;
@@ -56,9 +57,12 @@ public class PostService {
         }
         validatePost(request.title(), request.text());
         List<String> normalizedTags = PostTagDao.normalize(request.tags());
-        Post old = requirePost(id);
-        Post updated = posts.save(new Post(old.id(), request.title().trim(), request.text(), old.likesCount()));
+        if (id < 1) throw new IllegalArgumentException("Post id must be positive");
+        if (posts.updateContent(id, request.title().trim(), request.text()) == 0) {
+            throw new NotFoundException("Post " + id + " not found");
+        }
         tags.replace(id, normalizedTags);
+        Post updated = requirePost(id);
         return toResponse(updated, tags.findByPostId(id), comments.countByPostId(id), false);
     }
 
@@ -101,13 +105,15 @@ public class PostService {
     }
 
     private static PostResponse toResponse(Post post, List<String> tags, long commentsCount, boolean preview) {
-        String text = preview ? truncatePreview(post.text()) : post.text();
+        String text = preview ? firstParagraph(post.text()) : post.text();
         return new PostResponse(post.id(), post.title(), text, tags, post.likesCount(), commentsCount);
     }
 
-    public static String truncatePreview(String text) {
-        if (text.codePointCount(0, text.length()) <= 128) return text;
-        return text.substring(0, text.offsetByCodePoints(0, 128)) + "…";
+    public static String firstParagraph(String text) {
+        return text.lines()
+                .dropWhile(String::isBlank)
+                .takeWhile(line -> !line.isBlank())
+                .collect(Collectors.joining("\n"));
     }
 
     private static void validatePost(String title, String text) {

@@ -8,6 +8,7 @@ import com.cyberbaron.blog.repository.PostRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcOperations;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PostRepositoryIntegrationTest {
     @Autowired PostRepository posts;
     @Autowired CommentRepository comments;
+    @Autowired NamedParameterJdbcOperations jdbc;
 
     @Test
     void storesAndReadsPostViaSpringDataJdbc() {
@@ -35,5 +37,19 @@ class PostRepositoryIntegrationTest {
         assertEquals(1L, comments.countByPostId(saved.id()));
         posts.deleteById(saved.id());
         assertTrue(comments.findById(comment.id()).isEmpty());
+    }
+
+    @Test
+    void updatingContentPreservesLikesAddedSincePostWasRead() {
+        Post original = posts.save(new Post(null, "Original", "Original body", 2));
+        jdbc.update("UPDATE posts SET likes_count = likes_count + 1 WHERE id = :id",
+                java.util.Map.of("id", original.id()));
+
+        assertEquals(1, posts.updateContent(original.id(), "Edited", "Edited body"));
+
+        Post updated = posts.findById(original.id()).orElseThrow();
+        assertEquals("Edited", updated.title());
+        assertEquals("Edited body", updated.text());
+        assertEquals(3L, updated.likesCount());
     }
 }

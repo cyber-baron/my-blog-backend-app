@@ -58,7 +58,6 @@ class PostServiceIntegrationTest {
         PostPageResponse page2 = posts.list("spring #java #mvc", 2, 1);
         assertTrue(page2.hasPrev());
         assertFalse(page2.hasNext());
-        assertTrue(page2.posts().get(0).text().endsWith("…"));
-        assertEquals(129, page2.posts().get(0).text().length());
+        assertEquals("X".repeat(135), page2.posts().get(0).text());
     }
 }

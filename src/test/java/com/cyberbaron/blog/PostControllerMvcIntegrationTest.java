@@ -85,6 +85,31 @@ class PostControllerMvcIntegrationTest {
                 .andExpect(jsonPath("$.tags", contains("java")));
     }
 
+    @Test
+    void editingPostPreservesLikesInPostAndFeed() throws Exception {
+        long postId = createPost("Original", "Original body", "java");
+        for (int i = 1; i <= 3; i++) {
+            mvc.perform(post("/api/posts/{id}/likes", postId))
+                    .andExpect(status().isOk()).andExpect(content().string(Integer.toString(i)));
+        }
+        var payload = mapper.createObjectNode().put("id", postId)
+                .put("title", "Edited post").put("text", "First paragraph\n\nSecond paragraph");
+        payload.putArray("tags").add("spring");
+        mvc.perform(put("/api/posts/{id}", postId).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(payload)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.likesCount").value(3));
+        mvc.perform(get("/api/posts/{id}", postId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.likesCount").value(3))
+                .andExpect(jsonPath("$.text").value("First paragraph\n\nSecond paragraph"))
+                .andExpect(jsonPath("$.tags", contains("spring")));
+        mvc.perform(get("/api/posts").param("search", "Edited post")
+                        .param("pageNumber", "1").param("pageSize", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.posts[0].likesCount").value(3))
+                .andExpect(jsonPath("$.posts[0].text").value("First paragraph"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"missing", "null", "mismatch"})
     void rejectsCommentUpdateWithInvalidId(String idCase) throws Exception {

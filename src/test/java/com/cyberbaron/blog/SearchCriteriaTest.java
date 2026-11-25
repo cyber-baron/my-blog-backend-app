@@ -1,6 +1,5 @@
 package com.cyberbaron.blog;
 
-import com.cyberbaron.blog.service.PostService;
 import com.cyberbaron.blog.service.SearchCriteria;
 import org.junit.jupiter.api.Test;
 
@@ -23,17 +22,4 @@ class SearchCriteriaTest {
         assertTrue(search.tags().isEmpty());
     }
 
-    @Test
-    void previewsHaveExactly128CodepointsThenEllipsis() {
-        String text = "_".repeat(129);
-        String preview = PostService.truncatePreview(text);
-        assertEquals(129, preview.codePointCount(0, preview.length()));
-        assertTrue(preview.endsWith("…"));
-        assertEquals(text.substring(0, text.offsetByCodePoints(0, 128)) + "…", preview);
-    }
-
-    @Test
-    void doesNotTruncateShortText() {
-        assertEquals("Hello", PostService.truncatePreview("Hello"));
-    }
 }
